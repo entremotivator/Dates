@@ -3,24 +3,34 @@ import pandas as pd
 import os
 from datetime import datetime
 import plotly.express as px
+import io
 
-st.set_page_config(page_title="📅 Kroon Beheer Client Calendar", layout="wide")
-st.title("📅 Kroon Beheer Client Info + Calendar View")
+st.set_page_config(page_title="📋 Kroon Beheer Client Calendar", layout="wide")
+st.title("📋 Kroon Beheer Client Manager + Calendar View")
 
-# File setup
-csv_filename = "Reservations Kroon Beheer BV - Kroon Beheer Client Info .csv"
-file_path = f"/mnt/data/{csv_filename}"
+# Default file path
+default_filename = "Reservations Kroon Beheer BV - Kroon Beheer Client Info .csv"
+default_path = f"/mnt/data/{default_filename}"
 
-# Load or create DataFrame
-if os.path.exists(file_path):
-    df = pd.read_csv(file_path)
-    st.success(f"Loaded data from `{csv_filename}`")
+# --- File Upload or Use Default ---
+st.sidebar.header("📂 File Options")
+uploaded_file = st.sidebar.file_uploader("Upload a CSV file", type=["csv"])
+
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    st.sidebar.success("✅ Uploaded CSV loaded.")
+    save_path = f"/mnt/data/{uploaded_file.name}"
 else:
-    df = pd.DataFrame(columns=[
-        "First Name", "Last Name", "Email", "Phone",
-        "Reservation Dates", "Status"
-    ])
-    st.warning("CSV file not found. Starting with empty table.")
+    if os.path.exists(default_path):
+        df = pd.read_csv(default_path)
+        st.sidebar.success(f"✅ Loaded: {default_filename}")
+    else:
+        df = pd.DataFrame(columns=[
+            "First Name", "Last Name", "Email", "Phone", 
+            "Reservation Dates", "Status"
+        ])
+        st.sidebar.warning("⚠️ No file found. A new file will be created.")
+    save_path = default_path
 
 # --- Add New Client with Multiple Dates ---
 st.subheader("➕ Add New Client With Multiple Reservation Dates")
@@ -34,10 +44,10 @@ with st.form("add_multi_date_client", clear_on_submit=True):
     with col2:
         last_name = st.text_input("Last Name")
         status = st.selectbox("Status", ["Pending", "Confirmed", "Cancelled"])
-    
+
     reservation_dates = st.multiselect(
         "Select One or More Reservation Dates",
-        options=pd.date_range(start=datetime.today(), periods=60).date,
+        options=pd.date_range(start=datetime.today(), periods=90).date,
         format_func=lambda x: x.strftime("%Y-%m-%d")
     )
 
@@ -52,11 +62,11 @@ with st.form("add_multi_date_client", clear_on_submit=True):
             "Status": status
         }
         df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-        df.to_csv(file_path, index=False)
-        st.success("✅ Client added with multiple dates!")
+        df.to_csv(save_path, index=False)
+        st.success(f"✅ Client added and saved to `{os.path.basename(save_path)}`")
 
 # --- Editable Table ---
-st.subheader("✏️ Edit Client Table")
+st.subheader("✏️ Edit Full Client Table")
 edited_df = st.data_editor(
     df,
     use_container_width=True,
@@ -64,14 +74,13 @@ edited_df = st.data_editor(
     key="client_editor"
 )
 
-if st.button("💾 Save Changes"):
-    edited_df.to_csv(file_path, index=False)
-    st.success("✅ Changes saved to CSV")
+if st.button("💾 Save Edited Table"):
+    edited_df.to_csv(save_path, index=False)
+    st.success(f"✅ Saved changes to `{os.path.basename(save_path)}`")
 
 # --- Calendar Visualization ---
-st.subheader("📆 Reservation Calendar")
+st.subheader("📆 Reservation Calendar View")
 
-# Expand all reservation dates into rows
 calendar_data = []
 for _, row in df.iterrows():
     if pd.notna(row["Reservation Dates"]):
@@ -81,7 +90,7 @@ for _, row in df.iterrows():
                 calendar_data.append({
                     "Client": f"{row['First Name']} {row['Last Name']}",
                     "Date": date,
-                    "Status": row["Status"]
+                    "Status": row.get("Status", "Unknown")
                 })
 
 if calendar_data:
@@ -94,7 +103,7 @@ if calendar_data:
         x_end="Date",
         y="Client",
         color="Status",
-        title="📅 Reservation Timeline",
+        title="📅 Client Reservation Timeline",
     )
     fig.update_layout(
         xaxis_title="Date",
@@ -104,4 +113,12 @@ if calendar_data:
     )
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.info("No reservation dates available yet to display.")
+    st.info("No reservation data available yet to show.")
+
+# --- Optional CSV Export ---
+st.download_button(
+    "📤 Download Current CSV",
+    data=edited_df.to_csv(index=False).encode("utf-8"),
+    file_name=os.path.basename(save_path),
+    mime="text/csv"
+)
